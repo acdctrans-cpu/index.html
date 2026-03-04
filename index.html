@@ -1,168 +1,189 @@
 <!DOCTYPE html>
-<html lang="pl">
+<html>
 <head>
 <meta charset="UTF-8">
-<title>Awizacja Dostaw</title>
+<title>Awizacja dostaw</title>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
 <style>
-body { font-family: Arial; padding: 20px; }
-input, button { margin: 5px; padding: 5px; }
-table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-td, th { border: 1px solid #ccc; padding: 5px; text-align: center; }
-button { cursor: pointer; }
+body { font-family: Arial; max-width: 1000px; margin: auto; }
+.slot { border:1px solid #ccc; padding:5px; margin:5px; }
+button { padding:5px 10px; margin-top:5px; }
+.hidden { display:none; }
+.admin { background:#f2f2f2; padding:10px; margin-top:20px; }
 </style>
 </head>
 <body>
 
-<h1>Awizacja dostaw</h1>
+<h2>System awizacji dostaw</h2>
 
-<div id="loginDiv">
-<h2>Logowanie dostawcy</h2>
-<input id="loginName" placeholder="Nazwa firmy">
-<input id="loginPIN" placeholder="PIN" type="password">
+<div id="loginBox">
+<h3>Logowanie dostawcy</h3>
+<input id="supplierName" placeholder="Nazwa firmy">
+<input id="supplierPin" placeholder="PIN">
 <button onclick="loginSupplier()">Zaloguj</button>
 
 <h3>Administrator</h3>
-<input id="adminPass" placeholder="Hasło admina" type="password">
+<input id="adminPass" type="password" placeholder="Hasło admina">
 <button onclick="loginAdmin()">Zaloguj jako admin</button>
 </div>
 
-<div id="appDiv" style="display:none;">
-<h2>Kalendarz dostaw</h2>
-<button onclick="logout()">Wyloguj</button>
-<div id="welcome"></div>
-<table id="calendar"></table>
+<div id="app" class="hidden">
+<h3 id="welcome"></h3>
+<div id="calendar"></div>
+</div>
+
+<div id="adminPanel" class="admin hidden">
+<h3>Panel Administratora</h3>
+<div id="allBookings"></div>
 </div>
 
 <script>
-// ==========================================
-// TU WKLEJ DANE SUPABASE
+
+// 🔹 TWOJE DANE SUPABASE
 const SUPABASE_URL = 'https://hekspmfqnsophgwpuibv.supabase.co';
 const SUPABASE_ANON_KEY = 'PAkG0QlNbZuOFoV5tXyXPg_GDfLPM1o';
 
-const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// 🔹 HASŁO ADMINA
+const ADMIN_PASSWORD = "admin123";
 
-const HOURS = [6,7,8,9,10,11,12,13];
-let user = null;
-let currentWeek = new Date();
+const { createClient } = supabase;
+const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-function startOfWeek(date){
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day===0? -6:1);
-  return new Date(d.setDate(diff));
+let currentSupplier = null;
+let isAdmin = false;
+
+async function loginSupplier() {
+    const name = document.getElementById("supplierName").value;
+    const pin = document.getElementById("supplierPin").value;
+
+    const { data, error } = await client
+        .from('suppliers')
+        .select('*')
+        .eq('name', name)
+        .eq('pin', pin)
+        .single();
+
+    if (error || !data) {
+        alert("Błędne dane logowania");
+        return;
+    }
+
+    currentSupplier = data.name;
+    startApp();
 }
 
-function formatDate(d){ return d.toISOString().split('T')[0]; }
+function loginAdmin() {
+    const pass = document.getElementById("adminPass").value;
 
-// ====================== LOGIN ======================
-async function loginSupplier(){
-  const name = document.getElementById('loginName').value;
-  const pin = document.getElementById('loginPIN').value;
-  const { data, error } = await supabase
-    .from('suppliers')
-    .select('*')
-    .eq('name', name)
-    .eq('pin', pin)
-    .single();
-  if(error){ alert('Błędne dane'); return; }
-  user = data;
-  showApp();
+    if (pass === ADMIN_PASSWORD) {
+        isAdmin = true;
+        startApp();
+    } else {
+        alert("Błędne hasło");
+    }
 }
 
-function loginAdmin(){
-  const pass = document.getElementById('adminPass').value;
-  if(pass === 'admin123'){ user = { isAdmin:true }; showApp(); }
-  else alert('Błędne hasło');
+function startApp() {
+    document.getElementById("loginBox").classList.add("hidden");
+    document.getElementById("app").classList.remove("hidden");
+    document.getElementById("welcome").innerText =
+        isAdmin ? "Witaj Admin" : "Zalogowany: " + currentSupplier;
+
+    if (isAdmin) {
+        document.getElementById("adminPanel").classList.remove("hidden");
+        loadAllBookings();
+    }
+
+    generateCalendar();
 }
 
-function logout(){
-  user = null;
-  document.getElementById('appDiv').style.display = 'none';
-  document.getElementById('loginDiv').style.display = 'block';
-}
+function generateCalendar() {
+    const calendar = document.getElementById("calendar");
+    calendar.innerHTML = "";
 
-// ====================== KALENDARZ ======================
-async function loadBookings(){
-  const { data } = await supabase.from('bookings').select('*');
-  return data;
-}
+    const today = new Date();
 
-function getDaysOfWeek(start){
-  let days = [];
-  const s = startOfWeek(start);
-  for(let i=0;i<5;i++){
-    const d = new Date(s);
-    d.setDate(s.getDate()+i);
-    days.push(d);
-  }
-  return days;
-}
+    for (let d = 0; d < 14; d++) {
+        let date = new Date();
+        date.setDate(today.getDate() + d);
 
-async function showApp(){
-  document.getElementById('loginDiv').style.display = 'none';
-  document.getElementById('appDiv').style.display = 'block';
-  document.getElementById('welcome').innerText = user.isAdmin ? 'Witaj Admin' : 'Witaj ' + user.name;
-  renderCalendar();
-}
+        let day = date.getDay();
+        if (day === 0 || day === 6) continue;
 
-async function renderCalendar(){
-  const bookings = await loadBookings();
-  const table = document.getElementById('calendar');
-  table.innerHTML = '';
-  const days = getDaysOfWeek(currentWeek);
-
-  // nagłówek
-  let tr = document.createElement('tr');
-  let th = document.createElement('th'); th.innerText = 'Godzina'; tr.appendChild(th);
-  days.forEach(d=>{ let th = document.createElement('th'); th.innerText = d.toLocaleDateString(); tr.appendChild(th); });
-  table.appendChild(tr);
-
-  HOURS.forEach(hour=>{
-    let tr = document.createElement('tr');
-    let tdHour = document.createElement('td'); tdHour.innerText = hour+':00'; tr.appendChild(tdHour);
-
-    days.forEach(day=>{
-      let td = document.createElement('td');
-      const dateStr = formatDate(day);
-      const slot = bookings.filter(b=>b.date===dateStr && b.hour===hour);
-      slot.forEach(b=>{
-        let div = document.createElement('div');
-        div.innerText = b.name || '---';
-        if(user.isAdmin || (user.id && b.supplier_id===user.id)){
-          let btn = document.createElement('button');
-          btn.innerText='❌';
-          btn.onclick = ()=>deleteBooking(b.id);
-          div.appendChild(btn);
+        for (let h = 6; h < 13; h++) {
+            createSlot(date, h);
         }
-        td.appendChild(div);
-      });
-      const spotsLeft = 2-slot.length;
-      if(!user.isAdmin && user.id && spotsLeft>0){
-        let btn = document.createElement('button');
-        btn.innerText='Rezerwuj ('+spotsLeft+')';
-        btn.onclick = ()=>bookSlot(dateStr,hour);
-        td.appendChild(btn);
-      }
-      if(spotsLeft===0 && !user.isAdmin){ td.appendChild(document.createTextNode('Brak miejsc')); }
-      tr.appendChild(td);
+    }
+}
+
+async function createSlot(date, hour) {
+    const dateStr = date.toISOString().split('T')[0];
+
+    const { data } = await client
+        .from('bookings')
+        .select('*')
+        .eq('date', dateStr)
+        .eq('hour', hour);
+
+    const count = data ? data.length : 0;
+
+    const div = document.createElement("div");
+    div.className = "slot";
+    div.innerHTML = `${dateStr} ${hour}:00 (${count}/2)`;
+
+    if (count < 2 && !isAdmin) {
+        const btn = document.createElement("button");
+        btn.innerText = "Rezerwuj";
+        btn.onclick = () => bookSlot(dateStr, hour);
+        div.appendChild(btn);
+    }
+
+    document.getElementById("calendar").appendChild(div);
+}
+
+async function bookSlot(date, hour) {
+    if (!currentSupplier) return;
+
+    const { error } = await client
+        .from('bookings')
+        .insert([{ supplier: currentSupplier, date, hour }]);
+
+    if (error) {
+        alert("Błąd zapisu");
+        return;
+    }
+
+    alert("Zarezerwowano");
+    generateCalendar();
+}
+
+async function loadAllBookings() {
+    const { data } = await client.from('bookings').select('*');
+
+    const div = document.getElementById("allBookings");
+    div.innerHTML = "";
+
+    data.forEach(b => {
+        const el = document.createElement("div");
+        el.innerHTML = `${b.date} ${b.hour}:00 - ${b.supplier}`;
+
+        const btn = document.createElement("button");
+        btn.innerText = "Usuń";
+        btn.onclick = () => deleteBooking(b.id);
+
+        el.appendChild(btn);
+        div.appendChild(el);
     });
-    table.appendChild(tr);
-  });
 }
 
-// ====================== AKCJE ======================
-async function bookSlot(date,hour){
-  await supabase.from('bookings').insert([{supplier_id:user.id,date:date,hour:hour}]);
-  renderCalendar();
-}
-
-async function deleteBooking(id){
-  await supabase.from('bookings').delete().eq('id',id);
-  renderCalendar();
+async function deleteBooking(id) {
+    await client.from('bookings').delete().eq('id', id);
+    loadAllBookings();
+    generateCalendar();
 }
 
 </script>
-
 </body>
 </html>
